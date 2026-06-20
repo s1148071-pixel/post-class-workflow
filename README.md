@@ -21,6 +21,19 @@ streamlit run app.py
 
 浏览器打开 `http://localhost:8501`。
 
+## 线上部署
+
+项目已配置为 Streamlit Community Cloud 一键部署：
+
+1. Fork / 克隆本项目到你的 GitHub
+2. 在 [Streamlit Cloud](https://streamlit.io/cloud) 连接仓库
+3. 在 Streamlit Secrets 中配置：
+   - `DEEPSEEK_API_KEY` = `sk-your-key-here`
+   - `DEEPSEEK_BASE_URL` = `https://api.deepseek.com/v1`
+4. 部署完成，获得公开链接供老师使用
+
+> **注意**：视频高光功能需要 FFmpeg（通过 `packages.txt` 自动安装）。主要使用路径为粘贴腾讯会议转写稿，无需上传视频。
+
 ## 功能流程
 
 ```
@@ -110,10 +123,11 @@ API 调用失败自动降级到 `mock_data.py`，审核台显示 `Mock 降级` �
 
 - **前端**：Streamlit 1.57
 - **LLM**：DeepSeek v4-pro（直连 api.deepseek.com/v1）
-- **游戏模板**：纯 HTML/CSS/JS，零外部依赖
+- **游戏模板**：纯 HTML/CSS/JS，零外部依赖，10 关固定机制
 - **发音**：有道 dictvoice API
-- **视频**：Phase 4（ASR + FFmpeg，待开发）
-- **背景图**：Phase 5d（生图 API，待接入）
+- **视频**：FFmpeg（高光剪辑）
+- **ASR**：腾讯会议转写稿解析（路径 A，主力方案）
+- **部署**：Streamlit Cloud
 
 ## 开发阶段
 
@@ -124,7 +138,9 @@ API 调用失败自动降级到 `mock_data.py`，审核台显示 `Mock 降级` �
 | 2 | LLM 处理管线 | ✅ |
 | 2b | Prompt 质量调优 | ✅ |
 | 3 | 反馈报告审核编辑 | ✅ |
-| 4 | 视频高光 + FFmpeg | ⬜ |
-| 5 | 作业 HTML 游戏化 | ✅ |
+| 4 | 视频高光 + FFmpeg | ✅ v1 |
+| 5 | 作业 HTML 游戏化 | ✅ v3 |
 | 5c | LLM 联调验证 | ✅ |
+| — | Git 初始化 + 部署配置 | ✅ |
+| 5b | 模板浏览器实测 | 🟡 |
 | 6 | 内部试用 | ⬜ |
