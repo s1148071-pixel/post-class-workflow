@@ -1,0 +1,18 @@
+[theme]
+primaryColor = "#206F6B"
+backgroundColor = "#FCFAF7"
+secondaryBackgroundColor = "#F7F3ED"
+textColor = "#2B2B2B"
+font = "sans serif"
+
+[server]
+# 允许大文件上传（视频最大 500MB）
+maxUploadSize = 500
+# 关闭文件监视器热重载（生产环境不需要）
+runOnSave = false
+# 启用跨域（如果后续需要 API 访问）
+enableCORS = false
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
