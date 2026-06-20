@@ -1,0 +1,44 @@
+{
+  "_description": "媛媛星链英语第九次课 — 沈老师 · 小学一年级 · 2026-06-03",
+  "_usage": "在提交页点击「加载测试用例」一键填入所有字段",
+
+  "teacher": "沈老师",
+  "grade_level": "G1",
+  "grade_label": "一年级",
+
+  "article": "Grandmother (奶奶) says, \"I am (我是) lost.\"\nShe looks at an (一个) old (老的) map (地图).\nThen she picks up a fan (风扇) in her hand (手).\nShe blows the wind back (向后).\nNow she can (能) see the road!\nShe is at (在…) home (家) now.",
+
+  "vocabulary": [
+    {"en": "grandmother", "cn": "奶奶", "emoji": "👵"},
+    {"en": "lost", "cn": "迷路", "emoji": "😕"},
+    {"en": "old", "cn": "老的", "emoji": "📜"},
+    {"en": "map", "cn": "地图", "emoji": "🗺️"},
+    {"en": "fan", "cn": "风扇", "emoji": "🌀"},
+    {"en": "hand", "cn": "手", "emoji": "✋"},
+    {"en": "wind", "cn": "风", "emoji": "💨"},
+    {"en": "back", "cn": "向后", "emoji": "⬅️"},
+    {"en": "road", "cn": "路", "emoji": "🛣️"},
+    {"en": "home", "cn": "家", "emoji": "🏠"}
+  ],
+
+  "vocabulary_raw": "grandmother 奶奶\nlost 迷路\nold 老的\nmap 地图\nfan 风扇\nhand 手\nwind 风\nback 向后\nroad 路\nhome 家",
+
+  "transcript_file": "test_data/yuan_class_transcript.txt",
+  "transcript_format": "tencent_speaker_timestamp",
+  "transcript_source": "腾讯会议自动转写 → 导出 docx → 提取纯文本",
+
+  "video_file": "C:\\Users\\23899\\Desktop\\媛媛的星链英语第九次课.mp4",
+  "video_note": "193MB MP4，腾讯会议录制",
+
+  "speakers": {
+    "teacher": "小木学习",
+    "student": "沈老师"
+  },
+
+  "class_info": {
+    "subject": "英语",
+    "topic": "Grandmother and the Map — 方位介词与自然拼读",
+    "duration": "约80分钟",
+    "platform": "腾讯会议"
+  }
+}
