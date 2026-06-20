@@ -1,0 +1,27 @@
+# Post-Class Workflow — 课后输出工作台
+
+- **Stack**: Streamlit 1.57 + DeepSeek v4-pro + FFmpeg
+- **Deploy**: Streamlit Community Cloud（`packages.txt` 安装 FFmpeg）
+- **Purpose**: AI 驱动英语课后内容生成——老师粘贴文章+词汇，AI 生成反馈报告+高光视频+HTML 游戏作业
+- **Architecture**:
+  - `app.py` — Streamlit 主应用（4 阶段状态机：submit → processing → review → published）
+  - `utils/prompts.py` — LLM 提示词模板（调 prompt 只改这个文件）
+  - `utils/llm_client.py` — DeepSeek API 封装（含 fallback 机制）
+  - `utils/game_renderer.py` — 游戏 HTML 渲染引擎 + 数据验证层
+  - `utils/game_template_v3.html` — 10 关固定机制游戏模板（76KB，零外部依赖）
+  - `utils/mock_data.py` — Mock 数据（Demo / fallback）
+  - `utils/transcript_parser.py` — 腾讯会议转写稿解析器（支持 4 种格式）
+  - `utils/video_processor.py` — FFmpeg 封装
+  - `utils/asr_client.py` — Whisper ASR 封装（路径 B，已废案）
+  - `utils/session.py` — Session JSON 持久化
+  - `utils/__init__.py` — 编辑合并 + 差异对比
+- **Key constraints**:
+  - API Key 存储在 `.env`（gitignore），Streamlit Cloud 使用 Secrets
+  - API 失败自动降级到 Mock 数据，审核台显示 `Mock 降级` 标记
+  - 游戏数据验证层：`validate_game_data()` 渲染前逐关检查
+  - 主 ASR 路径：腾讯会议转写稿粘贴（路径 A），Whisper 路径（B）已废案
+- **Deploy notes**:
+  - 首次部署需在 Streamlit Cloud Dashboard 设置 Secrets（DEEPSEEK_API_KEY + DEEPSEEK_BASE_URL）
+  - FFmpeg 通过 `packages.txt` 自动安装
+  - `server.maxUploadSize = 500` MB（config.toml）
+- **Related**: 需求文档 `Desktop/课后输出工作流-需求文档.md`；memory `post-class-workflow`
