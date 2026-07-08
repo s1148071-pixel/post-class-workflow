@@ -1,256 +1,296 @@
-# 课后输出工作台 · 产品需求文档 (PRD)
+# 课后输出工作台 — 技术交底书
 
-> **版本**: v1.0 | **日期**: 2026-07-08 | **作者**: Donovan Yuan（袁闻骏）
-> **对应代码**: `github.com/s1148071-pixel/post-class-workflow`（v1，4 commits）
-
----
-
-## 一、产品概述
-
-### 1.1 一句话定位
-
-**AI 驱动的英语课后内容一站生成器**——老师上完课只需粘贴文章和词汇，AI 自动生成反馈报告、高光视频片段、交互式 HTML 课后游戏，老师在审核台确认后一键发布。
-
-### 1.2 目标用户
-
-| 角色 | 场景 | 痛点 |
-|------|------|------|
-| 高木公司英语老师 | 每节课后需产出家长反馈 + 课后练习 | 手工写报告耗时 30-60 分钟，作业千篇一律 |
-| 学生（6-12 岁） | 在家打开 HTML 游戏完成课后练习 | 传统 PDF 作业无互动，完成率低 |
-| 家长 | 查看孩子课堂表现 + 学习成果 | 收到的反馈笼统，看不出孩子具体学了什么 |
-
-### 1.3 核心价值主张
-
-- **老师**：10 分钟完成一次完整的课后输出（从 60 分钟压缩到 10 分钟）
-- **学生**：10 关游戏化闯关练习，手机直接打开玩
-- **家长**：收到个性化、有具体例子的反馈报告
+> **写给技术部的同事们** | 袁闻骏 (Donovan) | 2026-07-08
+> 代码：[github.com/s1148071-pixel/post-class-workflow](https://github.com/s1148071-pixel/post-class-workflow)
+> 在线 demo：http://localhost:8501（本地）/ Streamlit Cloud（部署中）
 
 ---
 
-## 二、用户流程
+## 这玩意儿干嘛的
+
+简单说：**老师上完课，粘贴文章和单词表，AI 自动吐出一份反馈报告、一段高光视频剪辑列表、一个学生能直接在手机上玩的 HTML 游戏。** 老师在审核台过一眼、改几处，点发布，全部下载。
+
+以前老师手工干这事要 30-60 分钟。现在大概 10 分钟——其中 AI 处理 ~2 分钟，剩下 8 分钟是老师审核编辑。
+
+---
+
+## 我为什么要做这个
+
+5 月份进高木实习，发现老师们每节课后的输出流程极其痛苦：
+
+1. 翻课堂录屏回放，找学生发言的高光片段——很耗时
+2. 给每个学生写个性化反馈——没逐字稿时基本靠编，"表现很好继续努力"往上一贴
+3. 出课后作业——PPT 截图贴 Word 里导出 PDF，学生打开率极低
+
+我当时在想：这堆东西能不能一次性自动生成？
+
+于是花了两周写需求文档（就在我桌面 `课后输出工作流-需求文档.md`），画了流程图，6 月初开始写代码。一个半月后，v1 能跑了。
+
+---
+
+## 技术栈 & 为什么选这些
+
+| 选型 | 为什么 |
+|------|--------|
+| **Streamlit** | Python 一把梭。不需要写前端（我没有 React 熟练度），一个 `st.button()` 就是一个按钮。审核台的三栏布局用 `st.columns()` 就搞定了。代价是性能——单线程，LLM 调用时 UI 会卡住（后面会讲怎么绕的） |
+| **DeepSeek v4-pro** | 公司本来就有 proxy。API 兼容 OpenAI 格式，`openai` 库直接调。中文产出质量不错，102s 出 10 关游戏 JSON，schema 合规率 100%（调了几轮 prompt 之后） |
+| **纯 HTML 游戏模板** | 一开始想让 LLM 直接生成 HTML——结果不稳定，同样的 prompt 两次输出完全不同的 DOM 结构。后来改成固定模板 + JSON 数据注入：LLM 只填内容词，模板负责渲染。Schema 合规率从 ~70% 蹦到 100% |
+| **有道 dictvoice** | 免费，不需要 API Key，`<audio src="...">` 贴进去就能发音。Whisper/通义听悟也调研了，但发现腾讯会议的自动转写稿已经够用——外部 ASR API 多一层网络延迟，用户体验反而变差，最后砍了 |
+| **FFmpeg** | 高光视频片段需要从原始录屏里裁剪。`shutil.which("ffmpeg")` 自动搜路径，Windows 上兼容 winget 安装的版本 |
+
+---
+
+## 项目结构（5 分钟看懂）
 
 ```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│ ① 提交   │ →  │ ② AI处理 │ →  │ ③ 审核   │ →  │ ④ 发布   │
-│ 2 分钟   │    │ ~2 分钟  │    │ 5 分钟   │    │ 1 分钟   │
-└──────────┘    └──────────┘    └──────────┘    └──────────┘
+post-class-workflow/
+├── app.py                       # ~2600 行，Streamlit UI + 四阶段状态机
+├── .streamlit/config.toml       # 主题色 + maxUploadSize=500MB
+├── packages.txt                 # Streamlit Cloud 自动 apt install ffmpeg
+├── requirements.txt             # 就仨依赖：streamlit openai python-dotenv
+├── test_game_data.py            # 12 项自动化检测
+├── docs/
+│   ├── PRD.md                   # 这份文档
+│   ├── DEVELOPMENT_GANTT.md     # 开发甘特图
+│   └── gantt-chart.html         # 甘特图可视化
+└── utils/
+    ├── prompts.py               # 🔥 所有 LLM prompt 模板在这里（调 prompt 只改这个）
+    ├── llm_client.py            # DeepSeek API 封装 + JSON 解析 + fallback
+    ├── game_renderer.py         # 游戏 HTML 渲染引擎 + validate_game_data()
+    ├── game_template_v3.html    # 🔥 10 关固定机制模板（76KB，14 个 bug baked-in）
+    ├── game_template.html       # 旧版 13 机制模板（已废弃，等清理）
+    ├── transcript_parser.py     # 腾讯会议转写稿解析（支持 4 种格式）
+    ├── video_processor.py       # FFmpeg 封装（提取音频/裁剪/合并）
+    ├── asr_client.py            # Whisper ASR（延迟加载，路径 B 已废案）
+    ├── mock_data.py             # Mock 数据 + 示例转写稿
+    ├── session.py               # Session JSON 持久化
+    └── __init__.py              # 编辑合并 + 差异对比工具
 ```
 
-### ① 提交素材
-- 老师姓名、**学生年级**（低年级 / 高年级 / 初中——决定难度）
-- 课堂文章 / 课文内容
-- 词汇表（英文 + 中文释义，每行一个词）
-- 腾讯会议转写稿（粘贴文本，路径 A）或课堂录屏（路径 B，兜底）
+**核心设计原则**：三层分离。
 
-### ② AI 处理（24 微阶段流水线）
-- Stage 0-2：输入验证 → 转写稿解析 → 文章结构分析
-- Stage 3-5：LLM 并行处理——反馈报告 + 高光识别 + 游戏数据生成
-- Stage 6-7：游戏 HTML 渲染 + 数据验证 + 文件打包
-- 全程日志面板可见，旋转加载动画
+- `prompts.py` — 纯 prompt 字符串，调 prompt 不用翻 UI 代码
+- `llm_client.py` — 纯 API 调用，不依赖 Streamlit
+- `app.py` — 纯 UI 渲染，不关心 LLM 怎么调
 
-### ③ 审核编辑台（三栏布局）
-- **左栏**：反馈报告——编辑/预览模式切换，逐段修改，AI 原文折叠对比
-- **中栏**：视频高光——AI 推荐片段列表 + 手动添加
-- **右栏**：课后游戏——10 关预览，逐关可删除
-
-### ④ 发布下载
-- 反馈报告 `.txt`
-- 高光片段列表 `.json`
-- 视频合集 `.mp4`
-- **课后游戏 `.html`**（学生手机直接打开）
+每个文件可以独立修改和测试。我经常改 prompt 的时候 Streamlit 还在跑着，改完 `prompts.py` 保存，下次处理就生效——因为 Python 的 `import` 在 Streamlit 的 rerun 循环中会重新加载。
 
 ---
 
-## 三、当前功能清单（v1，2026-07-08）
-
-### 3.1 已实现 ✅
-
-| 模块 | 功能 | 成熟度 |
-|------|------|:--:|
-| 提交 | 文章 + 词汇表 + 年级选择器 | 🟢 生产可用 |
-| 提交 | 腾讯会议转写稿粘贴（路径 A，主力） | 🟢 生产可用 |
-| 提交 | 视频文件上传（路径 B，兜底） | 🟡 可用但 FFmpeg 依赖 |
-| 处理 | DeepSeek v4-pro 并行 LLM 调用 | 🟢 生产可用 |
-| 处理 | 24 微阶段日志面板 + 旋转动画 | 🟢 生产可用 |
-| 处理 | API 失败自动降级 Mock 数据 | 🟢 生产可用 |
-| 反馈 | 个性化报告生成（学生亮点 + 三维度覆盖） | 🟢 生产可用 |
-| 反馈 | 编辑/预览模式 + 逐段修改 + 修改摘要 | 🟢 生产可用 |
-| 反馈 | 年级难度适配（低/高/初中三档） | 🟢 生产可用 |
-| 高光 | LLM 语义评分双层加权（40%规则+60%LLM） | 🟢 生产可用 |
-| 高光 | 4 种转写稿格式自动检测解析 | 🟢 生产可用 |
-| 游戏 | 10 关固定机制 HTML 生成 | 🟢 生产可用 |
-| 游戏 | 数据验证层（12 项自动检测） | 🟢 生产可用 |
-| 游戏 | 4 轮 staggered confetti + 5 种音效 | 🟡 待移动端验收 |
-| 游戏 | 移动端适配（max-width 600px + touch 事件） | 🟡 待移动端验收 |
-
-### 3.2 已废弃 ❌
-
-| 废弃项 | 原因 |
-|--------|------|
-| Phase 4b：Whisper ASR + 通义听悟 | 外部 API 增加延迟，降低用户体验。腾讯会议转写稿（路径 A）已覆盖 90% 场景 |
-| Phase 5d：背景图生图 API | 锦上添花，非核心功能。LLM 调用已需 ~100s，再加 API 延迟不可接受 |
-
-### 3.3 已知问题
-
-| 问题 | 影响 | 优先级 |
-|------|------|:--:|
-| 进度条在 LLM 阶段卡住（~40s 反馈 + ~100s 作业） | 用户体验差，看着像死机 | P1 |
-| 反馈报告无转写稿时评语千篇一律 | 个性化不足 | P1 |
-| 移动端触摸未实测（L7 流星/L9 拖拽/L10 刮刮卡） | 学生端可能无法操作 | P0 |
-| FFmpeg 在 Streamlit Cloud 的安装尚未验证 | 路径 B 不可用 | P2 |
-| 日志面板微阶段进度映射不够精准 | 有些阶段瞬间跳过，有些卡很久 | P3 |
-
----
-
-## 四、技术架构
-
-### 4.1 技术栈
-
-| 层 | 技术 | 说明 |
-|----|------|------|
-| 审核台 UI | Streamlit 1.57 | Python 全栈，无需前后端分离 |
-| LLM | DeepSeek v4-pro | 直连 `api.deepseek.com/v1` |
-| 游戏模板 | 纯 HTML/CSS/JS | 单文件，零外部依赖，76KB |
-| 发音 | 有道 dictvoice API | 免费，稳定 |
-| 音效 | Web Audio API | 客户端合成，无需音频文件 |
-| 视频处理 | FFmpeg（系统级） | 提取音频 + 裁剪高光片段 |
-| 转写稿 | 腾讯会议原生格式 | 4 种格式自动检测 |
-| 部署 | Streamlit Community Cloud | 免费，自动 HTTPS |
-
-### 4.2 架构设计
+## 四个阶段怎么流转的
 
 ```
-app.py (UI 层 — 4 阶段状态机)
-  ├── utils/prompts.py      ← Prompt 模板（调 prompt 只改这里）
-  ├── utils/llm_client.py   ← API 封装 + JSON 解析 + Fallback
-  ├── utils/game_renderer.py ← HTML 渲染引擎 + 数据验证
-  ├── utils/game_template_v3.html ← 10 关固定机制模板
-  ├── utils/transcript_parser.py  ← 转写稿解析（4 格式）
-  ├── utils/video_processor.py    ← FFmpeg 封装
-  ├── utils/asr_client.py         ← Whisper（延迟导入，已废案）
-  ├── utils/mock_data.py          ← Mock 数据 + Fallback
-  ├── utils/session.py            ← Session JSON 持久化
-  └── utils/__init__.py           ← 编辑合并 + 差异对比
+st.session_state["stage"]
+    ∈ {submit → processing → review → published}
 ```
 
-### 4.3 关键设计决策
+不是真正的路由——就是 `if/elif` 四个大分支。简单粗暴但够用。
 
-**三层分离**：Prompt 模板（`prompts.py`）、API 调用（`llm_client.py`）、UI 渲染（`app.py`）完全解耦。调 prompt 不用翻 UI 代码，改 UI 不影响 prompt 逻辑。
+**阶段 1 (submit)**：三个输入区——文章（textarea）、词汇表（textarea + 格式检测）、转写稿（textarea 或文件上传）。年级下拉框影响 LLM prompt 里的难度等级。
 
-**固定 10 关骨架**（v3 决策）：从"灵活 13 机制"（LLM 自选游戏类型，经常出错）收敛为固定 10 关顺序。LLM 只填内容词，不选类型——Schema 合规率从 ~70% 提升到 100%。
+**阶段 2 (processing)**：最复杂的部分。24 个微阶段（Stage 0-23），在后台线程里跑：
 
-**Fallback 机制**：每个 LLM 调用内置 `_call_llm_with_fallback()`——API 超时/配额用完/返回格式错误时自动降级到 Mock 数据，审核台显示 `⚠️ Mock 降级` 标记，确保 Demo 随时可跑。
+```python
+# 简化版伪代码
+thread = threading.Thread(target=run_processing)
+thread.start()
 
-**数据验证层**：`validate_game_data()` 在 HTML 渲染前逐关检查字段完整性、词汇覆盖率、答案去重、blankPattern id 编号。`test_game_data.py` 提供 12 项自动化检测——在 LLM 和 HTML 之间加了最后一道防线。
+# 主线程轮询状态 + 定期 st.rerun() 刷新 UI
+while thread.is_alive():
+    time.sleep(1)
+    st.rerun()
+```
 
-**进度条状态机**：`run_processing()` 分多个 Stage，每个 Stage 做完实事后才 `st.rerun()`。进度条 100% 只在全部处理完成后才显示，不虚假进度。
+每个微阶段做完一件事（验证输入、解析转写稿、调 LLM、渲染游戏 HTML 等），往 `st.session_state.logs` 里 append 一条日志，然后 `st.rerun()`。日志面板实时滚屏，100% 进度条只在全部完成后才显示——不搞虚假进度。
 
-**游戏模板 baked-in 14 个 bug**：从 english-game 项目的 11 款游戏实战中积累的 14 个已知 bug（拖拽状态机冲突、Canvas 未清理、定时器泄漏等），在模板层做了预防性修复。
+**阶段 3 (review)**：三栏布局。左栏反馈报告（可逐段编辑，编辑/预览模式切换，显示修改 diff），中栏高光片段列表，右栏游戏预览。修改后的内容通过 `merge_feedback_edits()` 合并回最终输出。
 
----
-
-## 五、后续开发路线图
-
-### 5.1 近期（1-2 周，Demo 前）
-
-| 优先级 | 事项 | 预估 | 说明 |
-|:--:|------|:--:|------|
-| **P0** | 移动端触摸实测 | 30 min | L7/L9/L10 三关 touch 事件验证 |
-| **P0** | Confetti 效果验收 | 15 min | 4 轮 staggered 动画是否正常触发 |
-| **P1** | Streamlit Cloud 部署上线 | 30 min | 连接 GitHub → 配 Secrets → 拿公开链接 |
-| **P1** | 端到端走查 | 30 min | 完整走一遍：提交→处理→审核→下载 |
-
-### 5.2 中期（1-2 月，试用反馈驱动）
-
-| 优先级 | 事项 | 说明 |
-|:--:|------|------|
-| **P1** | 处理时长优化 | 当前 ~140s（40s 反馈 + 100s 游戏）。可探索：流式输出、游戏模板预编译、LLM 切换更快模型 |
-| **P1** | 反馈报告个性化增强 | 无转写稿时从文章+词汇表中提取更多信号，减少"表现很好继续努力"类空泛评语 |
-| **P1** | 进度条卡顿修复 | 在 LLM 调用阶段用假进度条或分阶段更新，避免用户以为死机 |
-| **P2** | 审核台批量操作 | 多学生时批量导入→批量处理→批量审核 |
-| **P2** | 游戏关卡可配置 | 老师可选择开启/关闭某些关卡类型 |
-| **P2** | 报告模板自定义 | 老师可保存自己的报告模板（落款、常用评语等） |
-| **P2** | 历史记录面板 | 查看过往生成的报告和游戏，支持重新下载 |
-
-### 5.3 远期（3-6 月，产品化）
-
-| 优先级 | 事项 | 说明 |
-|:--:|------|------|
-| **P3** | 学生账号体系 | 每个学生有自己的学习记录和成绩追踪 |
-| **P3** | 游戏数据回传 | 学生玩游戏的成绩回传到审核台，老师看到学习效果闭环 |
-| **P3** | 多模态输入 | 拍照识别黑板/课本内容（OCR），减少手动输入 |
-| **P3** | 多语言支持 | 扩展到其他语种教学场景 |
-
-### 5.4 技术债务清理
-
-| 事项 | 说明 |
-|------|------|
-| 清理 `asr_client.py` | Whisper 代码路径已废案但代码还在，建议加 `# DEPRECATED` 标记或移到独立分支 |
-| 清理 `game_template.html`（旧版） | 72KB 的 13 机制模板已被 v3 替代，保留徒增困惑 |
-| `requirements.txt` 补全 | 当前只有 3 个依赖，但 `asr_client.py` 的 whisper import 留着没删，可能误导 |
-| 日志面板微阶段映射 | 24 个阶段有些是 <0.1s 的纯内存操作，有些是 100s 的 LLM 调用——显示权重不一致 |
+**阶段 4 (published)**：四个下载按钮 + 处理摘要。
 
 ---
 
-## 六、竞品 & 差异化
+## 几个值得讲的工程决策
 
-| 竞品/替代方案 | 我们的差异 |
-|------|------|
-| 老师手工写报告 + 出题 | 10 分钟 vs 60 分钟，10 倍效率差 |
-| 通用 AI 聊天（ChatGPT 等） | 专为课后场景优化的 prompt + 审核台 + HTML 游戏产出——不是对话，是工作流 |
-| 教育 SaaS（ClassIn 等） | 我们不绑定平台，输出的是独立 HTML 文件——家长无需安装任何 App |
-| 题库型作业工具 | 我们是内容生成器而非题库——每节课的作业是定制化的 |
+### 1. 为什么从 13 种游戏机制收敛到固定 10 关
+
+最初的设计是：LLM 从 13 种游戏机制里自选 10 关，每关可以选不同的游戏类型。结果：
+
+- LLM 经常选重复的游戏类型（连着两关 balloon pop）
+- 有些机制（连线配对 connectMatch）LLM 理解偏差，JSON 字段经常填错
+- Schema 合规率不到 70%
+
+后来改了思路：**固定 10 关顺序，LLM 只填内容词**。balloonPop → flashlight → sceneChoice → ... → scratchCard，顺序永远不变。LLM 不需要理解"什么是 connectMatch"，只需要输出 `[{word: "apple", meaning: "苹果"}, ...]`。
+
+改了之后 Schema 合规率 100%，0 errors 0 warnings。代价是灵活性降低了——但如果老师想调整，可以在审核台逐关删除。
+
+### 2. 14 个 baked-in bug
+
+这 14 个 bug 是从我之前做的 11 款英语教学游戏里一个一个踩出来的，全部在 `game_template_v3.html` 模板层做了预防性修复。举三个最典型的：
+
+1. **拖拽状态机冲突**：之前在多个元素上分别绑定 document 的 mousemove/mouseup 事件，结果拖 A 元素时 B 也跟着飞。修复：单例 `activeDragFeather` 状态机，全局只有一个拖拽实例。
+
+2. **Canvas 每帧 Math.random()**：流星关每帧在 Canvas 上随机生成星星，requestAnimationFrame 循环里调 Math.random()——画面疯狂闪烁。修复：预渲染静态背景到离屏 canvas，只在需要变化时才重绘。
+
+3. **关卡切换时 setInterval 泄漏**：离开关卡 A 时 `setInterval` 没清，切换到关卡 B 后 A 的定时器还在跑。修复：全局 `activeLevelCleanup` 回调 + 统一的 `addTimer`/`clearAllTimers` 管理。
+
+### 3. Fallback 机制——API 挂了怎么办
+
+```python
+def _call_llm_with_fallback(prompt_func, mock_func, **kwargs):
+    try:
+        return call_deepseek(prompt_func(**kwargs))
+    except (APIError, Timeout, JSONDecodeError) as e:
+        st.warning(f"⚠️ API 失败: {e}，降级到 Mock 数据")
+        return mock_func(**kwargs)
+```
+
+每个 LLM 调用都包了这一层。DeepSeek 超时、配额用完、返回格式解析失败——都不影响流程，自动切到 mock 数据。审核台会显示 `⚠️ Mock 降级` 标记，老师能看到。
+
+这意味着 **Demo 永远能跑**——即使 API 挂了，也能展示完整流程和效果。
+
+### 4. 数据验证层——LLM 和 HTML 之间的最后一道防线
+
+`validate_game_data()` 在 HTML 渲染前逐关检查：
+
+```python
+errors = []
+# 检查每关的必需字段
+for level in game_data["levels"]:
+    if not all(k in level for k in REQUIRED_FIELDS):
+        errors.append(f"Level {level['id']} 缺少字段")
+    if level["answer"] in seen_answers:
+        errors.append(f"Level {level['id']} 答案重复: {level['answer']}")
+    # L4 blankPattern id 必须从 0 开始
+    if level["type"] == "visualSpelling":
+        blank_ids = [b["id"] for b in level["blankPattern"]]
+        if min(blank_ids) != 0:
+            errors.append(f"L4 blankPattern id 必须从 0 开始")
+```
+
+我单独写了一个 `test_game_data.py`，12 项自动检测——可以在 CI 里跑，也可以手动 `python test_game_data.py` 快速验证 LLM 产出的 JSON 是否合规。
 
 ---
 
-## 七、成功指标
+## 踩过的坑
 
-### 7.1 内部试用期（高木公司，2026年7月）
+### 坑 1：Streamlit 单线程卡 UI
 
-- **效率指标**：老师完成一次课后输出 ≤ 10 分钟（从粘贴素材到下载文件）
-- **质量指标**：老师审核时改动 ≤ 3 处（"扫一眼就过"）
-- **覆盖率指标**：≥ 3 位老师完成过完整流程
-- **可靠性指标**：无重大报错导致输出不可用
+LLM 调用一个 40 秒一个 100 秒，Streamlit 默认同步执行——UI 完全冻结。用户看着进度条不动以为死机了。
 
-### 7.2 对外阶段（后续）
+**解决**：`threading.Thread` 把处理逻辑扔到后台线程，主线程每秒 `st.rerun()` 刷新 UI。问题是 `st.rerun()` 会重置 Python 的局部变量——所以处理状态全部存在 `st.session_state` 里（它是 per-session 持久化的）。
 
-- 月活跃老师数
-- 游戏打开率（学生侧）
-- 游戏完成率（10 关通关比例）
-- NPS（老师满意度）
+### 坑 2：Prompt 里"避免空泛"是句废话
+
+给 LLM 说"不要空泛"——它不知道什么叫空泛。后来改成给正反例对比：
+
+```
+❌ 差：“Tom 表现得很好，继续加油。”
+✅ 好：“Tom 在 /er/ 发音练习中准确率达到 80%，尤其在 'teacher'
+   和 'river' 两个词上发音清晰。下次可以多练习 'burger' 的重音位置。”
+```
+
+并且加了三条硬规则：每个学生的评语必须包含至少一个具体例子 + 覆盖发音/词汇/课堂参与三个维度 + 六年级以上禁用"很棒""真厉害"等幼龄化表达。
+
+### 坑 3：LLM 产出的 blankPattern id 从 1 开始
+
+L4 visualSpelling 需要标注哪些字母位置是空格（让学生填），`id` 是 JS 里用来定位 DOM 元素的索引。LLM 习惯性 id 从 1 开始——但 JS 数组索引从 0 开始。渲染出来全是错位的。
+
+**解决**：在 `validate_game_data()` 里加了硬检测——`if min(blank_ids) != 0: raise`。并且 prompt 里明确写了 `blankPattern.id 从 0 开始编号`。
+
+### 坑 4：VPN + Git push GitHub 连不上
+
+Windows 上 Git Bash 用的 HTTPS 走 443 端口，开了 VPN 反而被拦。解决方案是关 `sslVerify` 或者切 SSH（走 22 端口）。记得 push 完恢复 `sslVerify`。
 
 ---
 
-## 八、附录
+## 部署指南
 
-### A. 10 关游戏机制（固定顺序）
+### 本地跑
 
-| 关 | 类型 | 玩法 | 技能 |
-|:--:|------|------|------|
-| 1 | 🎈 气球挑战 | 看中文释义点击对应英文气球 | 词义匹配 |
-| 2 | 🔦 暗夜搜寻 | mask-image 聚光灯找正确单词 | 图标识别 |
-| 3 | 🤔 情景辨析 | emoji 图标展示，选择对应单词 | 视觉联想 |
-| 4 | ✏️ 视觉拼写 | 补全单词中缺失的字母 | 拼写 |
-| 5 | 🧩 字母拼图 | 打乱字母按序点击拼出单词 | 字母顺序 |
-| 6 | 🃏 记忆配对 | 4×4 翻牌匹配英文+图片 | 图文记忆 |
-| 7 | 🌠 接流星 | Canvas 接下落流星，1个即通关 | 快速识别 |
-| 8 | ⭐ 星座连线 | Canvas 星星按拼写顺序连线 | 拼写顺序 |
-| 9 | 🪶 捕梦网 | 拖拽字母羽毛拼出单词 | 拖拽拼词 |
-| 10 | 🪄 刮刮卡 | Canvas 刮开涂层揭示答案 | 综合回顾 |
+```powershell
+cd C:\Users\23899\Projects\post-class-workflow
+cp .env.example .env          # 编辑 .env，填 DeepSeek API Key
+pip install -r requirements.txt
+streamlit run app.py
+```
 
-### B. 相关文档
+浏览器打开 `http://localhost:8501`。
 
-- 需求文档：`Desktop/课后输出工作流-需求文档.md`
-- 游戏设计规范：memory `edu-game-design-patterns`
-- 项目状态：memory `post-class-workflow`
-- 长期规划：`donovan-portfolio/ROADMAP.md`
-- English Game 仓库：`github.com/s1148071-pixel/english-game`（11 款游戏 + 模板）
+### 部署到 Streamlit Cloud（给老师用）
 
-### C. 术语
+1. Push 代码到 GitHub（已完成）
+2. 打开 [streamlit.io/cloud](https://streamlit.io/cloud)，用 GitHub 登录
+3. New app → 选 `s1148071-pixel/post-class-workflow` → main 分支 → `app.py`
+4. Advanced settings → Secrets：
+   ```
+   DEEPSEEK_API_KEY = sk-xxx
+   DEEPSEEK_BASE_URL = https://api.deepseek.com/v1
+   ```
+5. Deploy。几分钟后拿到 `xxx.streamlit.app` 链接，发给老师即可
 
-| 术语 | 含义 |
-|------|------|
-| 路径 A | 腾讯会议转写稿粘贴 → 解析 → 标准化 segments（主力方案） |
-| 路径 B | 视频上传 → FFmpeg 提取音频 → Whisper 转写（兜底，已废案） |
-| Mock 降级 | API 调用失败时自动使用预置示例数据，确保 Demo 不中断 |
-| v3 模板 | 10 关固定机制游戏模板，基于 english-game v2 的 14 个 bug baked-in |
+**注意**：Streamlit Cloud 免费版有资源限制（1GB RAM，不保证 CPU）。如果处理慢，考虑切到 Hugging Face Spaces（Docker 环境，更灵活）。
+
+---
+
+## 当前状态和接下来要做的
+
+### 已就绪
+
+- ✅ 核心管线（提交 → 处理 → 审核 → 发布）完整可用
+- ✅ 反馈报告：支持逐段编辑、预览模式、修改 diff
+- ✅ 游戏生成：10 关固定机制，schema 合规率 100%
+- ✅ 转写稿解析：支持 4 种腾讯会议格式
+- ✅ API fallback：失败自动降级 mock 数据
+- ✅ Git + 部署配置就绪
+
+### 短期（Demo 前，优先级 P0）
+
+| 事项 | 负责 | 预估 |
+|------|:--:|:--:|
+| 移动端触摸实测（L7 流星/L9 拖拽/L10 刮刮卡） | 我 | 30min |
+| Streamlit Cloud 连接上线 | 我 | 30min |
+| 端到端走查：粘贴→处理→审核→下载 | 我+老师 | 30min |
+
+### 中期（试用反馈驱动，P1-P2）
+
+- **处理速度优化**：当前 ~140 秒（40s 反馈 + 100s 游戏）。方向：流式输出（`stream=True`）、切更快模型、模板预编译
+- **反馈报告空泛问题**：无转写稿时从文章+词汇表提取更多差异化信号。现在的 prompt 已经做了正反例，但还有调优空间
+- **批量操作**：如果老师一次要给多个学生用，需要批量导入+批量处理
+- **游戏关卡可配置**：老师可选择开启/关闭某些关卡类型
+
+### 长期（产品化，P3）
+
+- 学生账号体系 + 游戏成绩回传 → 老师看到完整学习闭环
+- 拍照 OCR 输入（识别黑板/课本内容，减少手动输入）
+- 多语言扩展
+
+### 技术债务（有空就清）
+
+- `utils/asr_client.py` 里 Whisper 代码留着没删——虽然延迟加载不会影响运行，但容易误导新接手的同事
+- `utils/game_template.html`（72KB 旧版 13 机制模板）已被 v3 替代，该归档或删除
+- 日志面板的 24 个微阶段，有些 <0.1s 的纯内存操作和 100s 的 LLM 调用混在一起显示——建议加权重分级，让用户感知更真实
+
+---
+
+## 如果有同事想接着搞
+
+**改 prompt**：只动 `utils/prompts.py`，三个函数：
+- `FEEDBACK_SYSTEM_PROMPT` — 反馈报告
+- `HOMEWORK_SYSTEM_PROMPT` — 游戏 JSON
+- `HIGHLIGHT_SYSTEM_PROMPT` — 高光片段
+
+**改游戏模板**：`utils/game_template_v3.html`，76KB 纯 HTML/CSS/JS。结构是 `{{GAME_DATA}}` 占位符 + JS 动态渲染。改之前建议先读一下 `english-game` 仓库里的 HANDOFF.md 和 `_edu-game-checklist.md`。
+
+**加新功能**：在 `app.py` 的对应 stage 分支里加。如果加新的 LLM 调用，参考 `llm_client.py` 里的 `_call_llm_with_fallback()` 模式。
+
+**调 bug**：先跑 `python test_game_data.py` 确认不是游戏数据的问题，然后看 Streamlit 的日志输出（处理阶段的所有日志都在 `st.session_state.logs` 里，审查时也能看到）。
+
+---
+
+## 最后
+
+这个项目从 6 月初的需求文档到现在的 v1，大概一个半月。中间推翻过两次架构（游戏模板从 LLM 直出 → 模板注入，游戏机制从 13 种灵活 → 10 关固定），也踩了不少 DeepSeek prompt 的坑。
+
+如果技术部有同事想一起搞或者接手维护，随时找我聊。项目不大（~2700 行核心代码 + 76KB 模板），一个下午能看完。
+
+— Donovan
