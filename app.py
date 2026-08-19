@@ -12,6 +12,8 @@ Streamlit 审核台骨架，四个阶段：
   streamlit run app.py
 """
 
+import sys
+import io
 import time
 import json
 import os
@@ -20,6 +22,12 @@ import streamlit as st
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
+
+# 强制 UTF-8 输出——Windows GBK 控制台无法编码 emoji，导致 print/stderr 崩溃
+if sys.stdout.encoding != "utf-8":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if sys.stderr.encoding != "utf-8":
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 # 加载 .env 环境变量（必须在导入 llm_client 之前）
 # 基于脚本所在目录解析路径，而非当前工作目录

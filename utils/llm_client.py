@@ -86,6 +86,13 @@ def _call_llm(messages, temperature=0.3, max_tokens=4096):
     raw = response.choices[0].message.content
     finish_reason = response.choices[0].finish_reason
 
+    # 防护：API 返回空内容（DeepSeek 偶发空响应）
+    if not raw:
+        raise ValueError(
+            f"DeepSeek API 返回空内容（finish_reason={finish_reason}）。"
+            f"请重试或稍等片刻再试。"
+        )
+
     # 调试：检查是否被截断
     if finish_reason == "length":
         print(f"[LLM] 警告：响应被截断（finish_reason=length），max_tokens={max_tokens} 可能不够")
@@ -120,8 +127,27 @@ def generate_feedback_report(article, vocabulary, asr_segments=None, grade_level
     """
     from utils.prompts import build_feedback_prompt
 
-    messages = build_feedback_prompt(article, vocabulary, asr_segments, grade_level)
-    result = _call_llm(messages, temperature=0.3, max_tokens=4096)
+    # 输入截断保护：逐字稿太长会占满上下文窗口，导致输出被截断（finish_reason=length）
+    MAX_ASR_CHARS = 8000  # 约 2000 token（中文 ~4 chars/token）
+    safe_segments = asr_segments
+    if asr_segments:
+        total_chars = sum(len(s.get("text", "")) for s in asr_segments)
+        if total_chars > MAX_ASR_CHARS:
+            # 只保留前 N 个片段，优先保留学生发言（短且信息密度高）
+            kept = []
+            chars = 0
+            for s in asr_segments:
+                text = s.get("text", "")
+                if chars + len(text) <= MAX_ASR_CHARS:
+                    kept.append(s)
+                    chars += len(text)
+                else:
+                    break
+            safe_segments = kept
+            print(f"[LLM] 逐字稿截断：{len(asr_segments)}→{len(kept)} 片段（{total_chars}→{chars} 字符）")
+
+    messages = build_feedback_prompt(article, vocabulary, safe_segments, grade_level)
+    result = _call_llm(messages, temperature=0.3, max_tokens=8192)
     result["_source"] = "llm"
     return result
 

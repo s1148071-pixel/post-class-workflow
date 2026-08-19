@@ -10,8 +10,7 @@ font = "sans serif"
 maxUploadSize = 500
 # 关闭文件监视器热重载（生产环境不需要）
 runOnSave = false
-# 启用跨域（如果后续需要 API 访问）
-enableCORS = false
+# 启用反跨域攻击保护
 enableXsrfProtection = true
 
 [browser]
